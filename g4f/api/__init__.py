@@ -195,7 +195,10 @@ class Api:
                 # Streaming response
                 async def streaming():
                     try:
-                        async for chunk in response:
+                        # Determine se response é um Iterator e trate conforme apropriado
+                        response_list = list(response) if isinstance(response, Iterator) else response[response] 
+
+                        for chunk in response_list:
                             yield f"data: {json.dumps(chunk.to_json())}\n\n"
                     except GeneratorExit:
                         pass
