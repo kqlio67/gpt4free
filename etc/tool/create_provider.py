@@ -1,4 +1,3 @@
-
 import sys, re
 from pathlib import Path
 from os import path
@@ -25,10 +24,8 @@ def input_command():
         contents.append(line)
     return "\n".join(contents)
 
-name = input("Name: ")
-provider_path = f"g4f/Provider/{name}.py"
-
-example = """
+templates = {
+    "AsyncGeneratorProvider": """
 from __future__ import annotations
 
 from ..typing import AsyncResult, Messages
@@ -74,7 +71,135 @@ class {name}(AsyncGeneratorProvider, ProviderModelMixin):
                 async for chunk in response.content:
                     if chunk:
                         yield chunk.decode()
+""",
+    "OpenaiTemplate": """
+from __future__ import annotations
+
+from ..typing import AsyncResult, Messages
+from .template import OpenaiTemplate
+
+
+class {name}(OpenaiTemplate):
+    api_base = "https://example.com/v1"
+    
+    default_model = ''
+    models = ['', '']
+""",
+    "needs_auth": """
+from __future__ import annotations
+
+from ..typing import AsyncResult, Messages
+from .base_provider import AsyncGeneratorProvider, ProviderModelMixin
+
+
+class {name}(AsyncGeneratorProvider, ProviderModelMixin):
+    url = "https://example.com"
+    working = True
+    supports_stream = True
+    needs_auth = True
+    
+    default_model = ''
+    models = ['', '']
+
+    @classmethod
+    async def create_async_generator(
+        cls,
+        model: str,
+        messages: Messages,
+        proxy: str = None,
+        **kwargs
+    ) -> AsyncResult:
+        yield "Not implemented"
+""",
+    "ImageProvider": """
+from __future__ import annotations
+
+from ..typing import AsyncResult, Messages
+from .base_provider import AsyncGeneratorProvider
+from ..image import ImageResponse
+
+
+class {name}(AsyncGeneratorProvider):
+    url = "https://example.com"
+    working = True
+    supports_stream = False
+
+    @classmethod
+    async def create_async_generator(
+        cls,
+        model: str,
+        messages: Messages,
+        proxy: str = None,
+        **kwargs
+    ) -> AsyncResult:
+        yield ImageResponse("https://example.com/image.png", "prompt")
+""",
+    "AudioProvider": """
+from __future__ import annotations
+
+from ..typing import AsyncResult, Messages
+from .base_provider import AsyncGeneratorProvider
+from ..providers.response import AudioResponse
+
+
+class {name}(AsyncGeneratorProvider):
+    url = "https://example.com"
+    working = True
+    supports_stream = False
+
+    @classmethod
+    async def create_async_generator(
+        cls,
+        model: str,
+        messages: Messages,
+        proxy: str = None,
+        **kwargs
+    ) -> AsyncResult:
+        yield AudioResponse("https://example.com/audio.mp3", "prompt")
+""",
+    "VideoProvider": """
+from __future__ import annotations
+
+from ..typing import AsyncResult, Messages
+from .base_provider import AsyncGeneratorProvider
+from ..providers.response import VideoResponse
+
+
+class {name}(AsyncGeneratorProvider):
+    url = "https://example.com"
+    working = True
+    supports_stream = False
+
+    @classmethod
+    async def create_async_generator(
+        cls,
+        model: str,
+        messages: Messages,
+        proxy: str = None,
+        **kwargs
+    ) -> AsyncResult:
+        yield VideoResponse("https://example.com/video.mp4", "prompt")
 """
+}
+
+def get_template():
+    print("Select a template for the provider:")
+    for i, template_name in enumerate(templates.keys(), 1):
+        print(f"{i}. {template_name}")
+    
+    while True:
+        try:
+            choice = int(input(f"Enter a number (1-{len(templates)}): "))
+            if 1 <= choice <= len(templates):
+                return list(templates.values())[choice-1]
+        except ValueError:
+            pass
+        print("Invalid choice. Please try again.")
+
+name = input("Name: ")
+provider_path = f"g4f/Provider/{name}.py"
+
+example = get_template()
 
 def create_provider(provider_path: str, name: str):
     command = input_command()
