@@ -31,38 +31,20 @@ provider_path = f"g4f/Provider/{name}.py"
 example = """
 from __future__ import annotations
 
-from aiohttp import ClientSession
-
 from ..typing import AsyncResult, Messages
+from ..providers.response import JsonConversation, Reasoning, Usage
 from .base_provider import AsyncGeneratorProvider, ProviderModelMixin
-from .helper import format_prompt
+from .helper import get_last_user_message
+from ..requests import sse_stream
 
 
 class {name}(AsyncGeneratorProvider, ProviderModelMixin):
-    label = ""
     url = "https://example.com"
-    api_endpoint = "https://example.com/api/completion"
     working = True
-    needs_auth = False
     supports_stream = True
-    supports_system_message = True
-    supports_message_history = True
     
     default_model = ''
     models = ['', '']
-    
-    model_aliases = {
-        "alias1": "model1",
-    }
-
-   @classmethod
-    def get_model(cls, model: str) -> str:
-        if model in cls.models:
-            return model
-        elif model in cls.model_aliases:
-            return cls.model_aliases[model]
-        else:
-            return cls.default_model
 
     @classmethod
     async def create_async_generator(
@@ -72,7 +54,7 @@ class {name}(AsyncGeneratorProvider, ProviderModelMixin):
         proxy: str = None,
         **kwargs
     ) -> AsyncResult:
-        model = cls.get_model(model)
+        model_name = cls.get_model(model)
         
         headers = {{
             "authority": "example.com",
@@ -81,10 +63,11 @@ class {name}(AsyncGeneratorProvider, ProviderModelMixin):
             "referer": f"{{cls.url}}/chat",
         }}
         async with ClientSession(headers=headers) as session:
-            prompt = format_prompt(messages)
+            prompt = get_last_user_message(messages)
             data = {{
                 "prompt": prompt,
-                "model": model,
+                "model": model_name,
+                "stream": True
             }}
             async with session.post(f"{{cls.url}}/api/chat", json=data, proxy=proxy) as response:
                 response.raise_for_status()
@@ -93,7 +76,7 @@ class {name}(AsyncGeneratorProvider, ProviderModelMixin):
                         yield chunk.decode()
 """
 
-if not path.isfile(provider_path):
+def create_provider(provider_path: str, name: str):
     command = input_command()
 
     prompt = f"""
@@ -112,18 +95,11 @@ And replace "gpt-3.5-turbo" with `model`.
 """
 
     print("Create code...")
-    response = []
-    for chunk in g4f.ChatCompletion.create(
+    response = g4f.ChatCompletion.create(
         model=g4f.models.gpt_4o,
         messages=[{"role": "user", "content": prompt}],
         timeout=300,
-        stream=True,
-    ):
-        print(chunk, end="", flush=True)
-        if not isinstance(chunk, Exception):
-            response.append(str(chunk))
-    print()
-    response = "".join(response)
+    )
 
     if code := read_code(response):
         with open(provider_path, "w") as file:
@@ -131,6 +107,41 @@ And replace "gpt-3.5-turbo" with `model`.
         print("Saved at:", provider_path)
         with open("g4f/Provider/__init__.py", "a") as file:
             file.write(f"\nfrom .{name} import {name}")
-else:
+
+def update_provider(provider_path: str, name: str):
     with open(provider_path, "r") as file:
-        code = file.read()
+        old_code = file.read()
+    
+    command = input_command()
+    
+    prompt = f"""
+Update the provider from a cURL command. The command is:
+```bash
+{command}
+```
+The provider to update:
+```python
+{old_code}
+```
+The name for the provider class:
+{name}
+Replace "hello" with `format_prompt(messages)`.
+And replace "gpt-3.5-turbo" with `model`.
+"""
+
+    print("Update code...")
+    response = g4f.ChatCompletion.create(
+        model=g4f.models.gpt_4o,
+        messages=[{"role": "user", "content": prompt}],
+        timeout=300,
+    )
+
+    if code := read_code(response):
+        with open(provider_path, "w") as file:
+            file.write(code)
+        print("Updated at:", provider_path)
+
+if not path.isfile(provider_path):
+    create_provider(provider_path, name)
+else:
+    update_provider(provider_path, name)
