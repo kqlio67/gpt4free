@@ -32,16 +32,20 @@ from ..typing import AsyncResult, Messages
 from ..providers.response import JsonConversation, Reasoning, Usage
 from .base_provider import AsyncGeneratorProvider, ProviderModelMixin
 from .helper import get_last_user_message
-from ..requests import sse_stream
+from ..requests import sse_stream, ClientSession
 
 
 class {name}(AsyncGeneratorProvider, ProviderModelMixin):
     url = "https://example.com"
+    label = "Example"
     working = True
     supports_stream = True
+    supports_message_history = True
+    supports_system_message = True
     
     default_model = ''
-    models = ['', '']
+    models = ['']
+    fallback_models = ['']
 
     @classmethod
     async def create_async_generator(
@@ -81,9 +85,12 @@ from .template import OpenaiTemplate
 
 class {name}(OpenaiTemplate):
     api_base = "https://example.com/v1"
+    label = "Example"
+    supports_gpt_4o_vision = True
     
     default_model = ''
-    models = ['', '']
+    models = ['']
+    fallback_models = ['']
 """,
     "needs_auth": """
 from __future__ import annotations
@@ -94,18 +101,23 @@ from .base_provider import AsyncGeneratorProvider, ProviderModelMixin
 
 class {name}(AsyncGeneratorProvider, ProviderModelMixin):
     url = "https://example.com"
+    label = "Example"
     working = True
     supports_stream = True
     needs_auth = True
+    supports_message_history = True
+    supports_system_message = True
     
     default_model = ''
-    models = ['', '']
+    models = ['']
+    fallback_models = ['']
 
     @classmethod
     async def create_async_generator(
         cls,
         model: str,
         messages: Messages,
+        auth: str = "...",
         proxy: str = None,
         **kwargs
     ) -> AsyncResult:
@@ -121,8 +133,12 @@ from ..image import ImageResponse
 
 class {name}(AsyncGeneratorProvider):
     url = "https://example.com"
+    label = "Example"
     working = True
     supports_stream = False
+    
+    default_model = ''
+    models = ['']
 
     @classmethod
     async def create_async_generator(
@@ -144,8 +160,12 @@ from ..providers.response import AudioResponse
 
 class {name}(AsyncGeneratorProvider):
     url = "https://example.com"
+    label = "Example"
     working = True
     supports_stream = False
+    
+    default_model = ''
+    models = ['']
 
     @classmethod
     async def create_async_generator(
@@ -167,8 +187,12 @@ from ..providers.response import VideoResponse
 
 class {name}(AsyncGeneratorProvider):
     url = "https://example.com"
+    label = "Example"
     working = True
     supports_stream = False
+    
+    default_model = ''
+    models = ['']
 
     @classmethod
     async def create_async_generator(
