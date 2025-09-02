@@ -8,6 +8,11 @@ import g4f
 
 g4f.debug.logging = True
 
+# Provider creation settings
+TIMEOUT = 600  # Timeout in seconds
+MODEL_NAME = "gpt-oss-120b"  # Model name as string
+FALLBACK_MODEL = g4f.models.gpt_oss_120b  # Fallback model from g4f.models
+
 def read_code(text):
     if match := re.search(r"```(python|py|)\n(?P<code>[\S\s]+?)\n```", text):
         return match.group("code")
@@ -29,24 +34,16 @@ templates = {
 from __future__ import annotations
 
 from ..typing import AsyncResult, Messages
-from ..providers.response import JsonConversation, Reasoning, Usage
-from .base_provider import AsyncGeneratorProvider, ProviderModelMixin
-from .helper import get_last_user_message
-from ..requests import sse_stream, ClientSession
+from ..providers.base_provider import AsyncGeneratorProvider
+from ..providers.helper import get_last_user_message
+from ..requests import StreamSession, sse_stream
 
 
-class {name}(AsyncGeneratorProvider, ProviderModelMixin):
+class {name}(AsyncGeneratorProvider):
     url = "https://example.com"
-    label = "Example"
     working = True
     supports_stream = True
-    supports_message_history = True
-    supports_system_message = True
     
-    default_model = ''
-    models = ['']
-    fallback_models = ['']
-
     @classmethod
     async def create_async_generator(
         cls,
@@ -55,73 +52,83 @@ class {name}(AsyncGeneratorProvider, ProviderModelMixin):
         proxy: str = None,
         **kwargs
     ) -> AsyncResult:
-        model_name = cls.get_model(model)
-        
         headers = {{
             "authority": "example.com",
             "accept": "application/json",
             "origin": cls.url,
-            "referer": f"{{cls.url}}/chat",
+            "referer": f"{{cls.url}}/",
         }}
-        async with ClientSession(headers=headers) as session:
+        async with StreamSession(headers=headers, proxy=proxy, impersonate="chrome110") as session:
             prompt = get_last_user_message(messages)
             data = {{
                 "prompt": prompt,
-                "model": model_name,
+                "model": model,
                 "stream": True
             }}
-            async with session.post(f"{{cls.url}}/api/chat", json=data, proxy=proxy) as response:
+            async with session.post(f"{{cls.url}}/api/chat", json=data) as response:
                 response.raise_for_status()
-                async for chunk in response.content:
+                async for chunk in sse_stream(response):
                     if chunk:
-                        yield chunk.decode()
+                        yield chunk
+""",
+    "AsyncAuthedProvider": """
+from __future__ import annotations
+
+from ..typing import AsyncResult, Messages
+from ..providers.base_provider import AsyncAuthedProvider
+from ..providers.helper import get_last_user_message
+from ..requests import StreamSession, sse_stream
+from ..providers.response import AuthResult, JsonConversation
+
+
+class {name}(AsyncAuthedProvider):
+    url = "https://example.com"
+    working = True
+    
+    @classmethod
+    async def on_auth_async(cls, proxy: str = None, **kwargs) -> AsyncIterator:
+        async with StreamSession(proxy=proxy, impersonate="chrome110") as session:
+            # Do auth stuff...
+            yield AuthResult(api_key="...")
+
+    @classmethod
+    async def create_authed(
+        cls,
+        model: str,
+        messages: Messages,
+        auth_result: AuthResult,
+        proxy: str = None,
+        conversation: JsonConversation = None,
+        **kwargs
+    ) -> AsyncResult:
+        headers = {{
+            "Authorization": f"Bearer {{auth_result.api_key}}",
+        }}
+        async with StreamSession(headers=headers, proxy=proxy, impersonate="chrome110") as session:
+            prompt = get_last_user_message(messages)
+            data = {{
+                "prompt": prompt,
+                "model": model,
+                "stream": True
+            }}
+            async with session.post(f"{{cls.url}}/api/chat", json=data) as response:
+                response.raise_for_status()
+                async for chunk in sse_stream(response):
+                    if chunk:
+                        yield chunk
 """,
     "OpenaiTemplate": """
 from __future__ import annotations
 
-from ..typing import AsyncResult, Messages
-from .template import OpenaiTemplate
+from ..providers.base_provider import OpenaiProvider
 
 
-class {name}(OpenaiTemplate):
-    api_base = "https://example.com/v1"
-    label = "Example"
-    supports_gpt_4o_vision = True
-    
-    default_model = ''
-    models = ['']
-    fallback_models = ['']
-""",
-    "needs_auth": """
-from __future__ import annotations
-
-from ..typing import AsyncResult, Messages
-from .base_provider import AsyncGeneratorProvider, ProviderModelMixin
-
-
-class {name}(AsyncGeneratorProvider, ProviderModelMixin):
+class {name}(OpenaiProvider):
     url = "https://example.com"
-    label = "Example"
-    working = True
-    supports_stream = True
-    needs_auth = True
-    supports_message_history = True
-    supports_system_message = True
+    api_base = "https://example.com/v1"
     
     default_model = ''
     models = ['']
-    fallback_models = ['']
-
-    @classmethod
-    async def create_async_generator(
-        cls,
-        model: str,
-        messages: Messages,
-        auth: str = "...",
-        proxy: str = None,
-        **kwargs
-    ) -> AsyncResult:
-        yield "Not implemented"
 """,
     "ImageProvider": """
 from __future__ import annotations
@@ -129,17 +136,13 @@ from __future__ import annotations
 from ..typing import AsyncResult, Messages
 from .base_provider import AsyncGeneratorProvider
 from ..image import ImageResponse
+from ..providers.helper import get_last_user_message
 
 
 class {name}(AsyncGeneratorProvider):
     url = "https://example.com"
-    label = "Example"
     working = True
-    supports_stream = False
     
-    default_model = ''
-    models = ['']
-
     @classmethod
     async def create_async_generator(
         cls,
@@ -148,7 +151,8 @@ class {name}(AsyncGeneratorProvider):
         proxy: str = None,
         **kwargs
     ) -> AsyncResult:
-        yield ImageResponse("https://example.com/image.png", "prompt")
+        prompt = get_last_user_message(messages)
+        yield ImageResponse("https://example.com/image.png", prompt)
 """,
     "AudioProvider": """
 from __future__ import annotations
@@ -156,17 +160,13 @@ from __future__ import annotations
 from ..typing import AsyncResult, Messages
 from .base_provider import AsyncGeneratorProvider
 from ..providers.response import AudioResponse
+from ..providers.helper import get_last_user_message
 
 
 class {name}(AsyncGeneratorProvider):
     url = "https://example.com"
-    label = "Example"
     working = True
-    supports_stream = False
     
-    default_model = ''
-    models = ['']
-
     @classmethod
     async def create_async_generator(
         cls,
@@ -175,34 +175,8 @@ class {name}(AsyncGeneratorProvider):
         proxy: str = None,
         **kwargs
     ) -> AsyncResult:
-        yield AudioResponse("https://example.com/audio.mp3", "prompt")
-""",
-    "VideoProvider": """
-from __future__ import annotations
-
-from ..typing import AsyncResult, Messages
-from .base_provider import AsyncGeneratorProvider
-from ..providers.response import VideoResponse
-
-
-class {name}(AsyncGeneratorProvider):
-    url = "https://example.com"
-    label = "Example"
-    working = True
-    supports_stream = False
-    
-    default_model = ''
-    models = ['']
-
-    @classmethod
-    async def create_async_generator(
-        cls,
-        model: str,
-        messages: Messages,
-        proxy: str = None,
-        **kwargs
-    ) -> AsyncResult:
-        yield VideoResponse("https://example.com/video.mp4", "prompt")
+        prompt = get_last_user_message(messages)
+        yield AudioResponse("https://example.com/audio.mp3", prompt)
 """
 }
 
@@ -244,11 +218,19 @@ And replace "gpt-3.5-turbo" with `model`.
 """
 
     print("Create code...")
-    response = g4f.ChatCompletion.create(
-        model=g4f.models.gpt_4o,
-        messages=[{"role": "user", "content": prompt}],
-        timeout=300,
-    )
+    # Try to use model as string first, fallback to g4f.models if it fails
+    try:
+        response = g4f.ChatCompletion.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            timeout=TIMEOUT,
+        )
+    except:
+        response = g4f.ChatCompletion.create(
+            model=FALLBACK_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            timeout=TIMEOUT,
+        )
 
     if code := read_code(response):
         with open(provider_path, "w") as file:
@@ -279,11 +261,19 @@ And replace "gpt-3.5-turbo" with `model`.
 """
 
     print("Update code...")
-    response = g4f.ChatCompletion.create(
-        model=g4f.models.gpt_4o,
-        messages=[{"role": "user", "content": prompt}],
-        timeout=300,
-    )
+    # Try to use model as string first, fallback to g4f.models if it fails
+    try:
+        response = g4f.ChatCompletion.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            timeout=TIMEOUT,
+        )
+    except:
+        response = g4f.ChatCompletion.create(
+            model=FALLBACK_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            timeout=TIMEOUT,
+        )
 
     if code := read_code(response):
         with open(provider_path, "w") as file:
