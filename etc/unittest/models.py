@@ -24,7 +24,9 @@ class TestProviderHasModel(unittest.TestCase):
                     continue
                 if issubclass(provider, ProviderModelMixin):
                     try:
+                        print(f"Testing {provider.__name__}.get_models()", flush=True)
                         provider.get_models(timeout=5) # Update models
+                        print(f"Finished {provider.__name__}.get_models()", flush=True)
                         if provider.model_aliases and model.name in provider.model_aliases:
                             model_name = provider.model_aliases[model.name]
                         else:
