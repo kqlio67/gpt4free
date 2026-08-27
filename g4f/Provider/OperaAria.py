@@ -71,7 +71,7 @@ class OperaAria(AsyncGeneratorProvider, ProviderModelMixin):
     }
 
     _user_agent_v1 = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Mobile Safari/537.36 OPR/89.0.0.0"
-    _user_agent_v2 = "Mozilla/5.0 (Linux; U; Android 14; Pixel 8 Pro Build/UQ1A.240205.004; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/138.0.7204.179 Mobile Safari/537.36 OPR/99.0.2254.81922"
+    _user_agent_v2 = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.7204.181 Mobile Safari/537.36 OPR/99.5.2254.2012"
 
     @classmethod
     def _get_api_version(cls, model: str) -> str:
@@ -93,7 +93,7 @@ class OperaAria(AsyncGeneratorProvider, ProviderModelMixin):
             },
             data={
                 "client_id": "mini-client",
-                "client_secret": "Pcc5NvlCrxl02pMw32kO6WrnhpS0pUZ95YrDP8XNKJJQvFht4wQDkFJ7v9x5hn7C",
+                "client_secret": "Gu3xD3Ws4wVBMtCV9z5ZtAjSsq61dlArjexgNE2vHTMzAuhX8V5JwXzXUypiKDZM",
                 "grant_type": "client_credentials",
                 "scope": "anonymous_account",
             },

@@ -246,10 +246,6 @@ def _resolve_provider(name: str) -> ProviderType:
         from g4f.Provider.audio.OpenAIFM import OpenAIFM
 
         return OpenAIFM
-    elif name == "OpenCode":
-        from .OpenCode import OpenCode
-
-        return OpenCode
 
     elif name == "OpenRouter":
         from g4f.Provider.needs_auth.OpenRouter import OpenRouter
@@ -435,7 +431,6 @@ _provider_names = [
     "KiloCode",
     "Ollama",
     "OpenAIFM",
-    "OpenCode",
     "OpenRouter",
     "OpenRouterFree",
     "OrcaRouter",
