@@ -54,13 +54,15 @@ async def raise_for_status_async(
                     message = message.get("message", message)
                 if isinstance(error, str):
                     message = f"{error}: {message}"
-            except json.JSONDecodeError:
+                if not isinstance(message, str):
+                    message = json.dumps(message) if isinstance(message, (dict, list)) else str(message)
+            except Exception:
                 message = await response.text()
         else:
             message = await response.text()
         if content_type.startswith(
                 "text/html"
-            ) or message.strip().lower().startswith("<!DOCTYPE".lower()):
+            ) or (isinstance(message, str) and message.strip().lower().startswith("<!DOCTYPE".lower())):
             message = "HTML content"
     if response.status == 520:
         message = "Unknown error (Cloudflare)"
