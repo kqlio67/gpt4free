@@ -367,12 +367,30 @@ gemini_2_5_pro = Model(
     best_provider=IterListProvider(["Gemini", "GeminiPro", "GeminiCLI"]),
 )
 
+gemini_3_7_flash = Model(
+    name="gemini-3.7-flash",
+    base_provider="Google",
+    best_provider=IterListProvider(["Antigravity", "Gemini", "GeminiCLI"]),
+)
+
+gemini_3_7_flash_extra_high = Model(
+    name="gemini-3.7-flash-extra-high",
+    base_provider="Google",
+    best_provider="Antigravity",
+)
+
+gemini_3_1_flash_lite_image = ImageModel(
+    name="gemini-3.1-flash-lite-image",
+    base_provider="Google",
+    best_provider="Antigravity",
+)
+
 gemini_3_pro_preview = Model(
     name="gemini-3-pro-preview", base_provider="Google", best_provider="GeminiCLI"
 )
 
 gemini_3_1_pro = Model(
-    name="gemini-3.1-pro", base_provider="Google", best_provider="Gemini"
+    name="gemini-3.1-pro", base_provider="Google", best_provider=IterListProvider(["Antigravity", "Gemini"])
 )
 
 gemini_3_1_flash_lite = Model(

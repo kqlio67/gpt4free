@@ -332,12 +332,14 @@ class Antigravity(AsyncGeneratorProvider, ProviderModelMixin, AuthFileMixin):
 
     default_model = "gemini-3.7-flash-high"
     models = [
+        "gemini-3.7-flash-extra-high",
         "gemini-3.7-flash-high",
         "gemini-3.7-flash-medium",
         "gemini-3.7-flash-low",
         "gemini-3.1-pro-high",
         "gemini-3.1-pro-low",
         "gemini-3.1-flash-lite",
+        "gemini-3.1-flash-lite-image",
         "gemini-3.6-flash-high",
         "gemini-3.6-flash-medium",
         "gemini-3.6-flash-low",
@@ -350,9 +352,15 @@ class Antigravity(AsyncGeneratorProvider, ProviderModelMixin, AuthFileMixin):
         "gpt-oss-120b-medium",
     ]
 
+    image_models = [
+        "gemini-3.1-flash-lite-image",
+    ]
+
     model_aliases = {
         "gemini-3.7-flash": "gemini-3.7-flash-high",
+        "gemini-3.7-flash-xhigh": "gemini-3.7-flash-extra-high",
         "gemini-3.1-pro": "gemini-3.1-pro-high",
+        "gemini-image": "gemini-3.1-flash-lite-image",
         "claude-3-7-sonnet": "claude-sonnet-4-6",
         "claude-3-5-sonnet": "claude-sonnet-4-6",
         "claude-3-opus": "claude-opus-4-6-thinking",
@@ -485,12 +493,24 @@ class Antigravity(AsyncGeneratorProvider, ProviderModelMixin, AuthFileMixin):
             contents = [{"role": "user", "parts": [{"text": "Hello"}]}]
 
         # Generation config
+        thinking_config = {"includeThoughts": True}
+        if "-extra-high" in model or kwargs.get("thinking_level") in ("extra_high", "extra-high", "xhigh"):
+            thinking_config["thinkingBudget"] = 32768
+        elif "-high" in model or kwargs.get("thinking_level") == "high":
+            thinking_config["thinkingBudget"] = 16384
+        elif "-medium" in model or kwargs.get("thinking_level") == "medium":
+            thinking_config["thinkingBudget"] = 8192
+        elif "-low" in model or kwargs.get("thinking_level") == "low":
+            thinking_config["thinkingBudget"] = 4096
+
         generation_config = {
             "maxOutputTokens": kwargs.get("max_tokens", 8192),
-            "thinkingConfig": {"includeThoughts": True},
+            "thinkingConfig": thinking_config,
         }
         if "temperature" in kwargs and kwargs["temperature"] is not None:
             generation_config["temperature"] = kwargs["temperature"]
+        if "service_tier" in kwargs and kwargs["service_tier"]:
+            generation_config["serviceTier"] = kwargs["service_tier"]
 
         inner_request = {
             "contents": contents,
@@ -568,6 +588,12 @@ class Antigravity(AsyncGeneratorProvider, ProviderModelMixin, AuthFileMixin):
                                                 thought_txt = p.get("text", "")
                                                 if thought_txt:
                                                     yield Reasoning(thought_txt)
+                                            elif "inlineData" in p:
+                                                inline = p["inlineData"]
+                                                mime = inline.get("mimeType", "image/png")
+                                                data_b64 = inline.get("data", "")
+                                                prompt_txt = format_media_prompt(messages) if messages else ""
+                                                yield ImageResponse([f"data:{mime};base64,{data_b64}"], prompt=prompt_txt)
                                             elif "text" in p:
                                                 yield p["text"]
                                     except Exception:
