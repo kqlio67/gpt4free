@@ -247,14 +247,9 @@ def _resolve_provider(name: str) -> ProviderType:
 
         return OpenAIFM
     elif name == "OpenCode":
-        from ..client.factory import AbstractClientFactory
-        _loaded_providers[name] = AbstractClientFactory.create_provider(
-            None, "https://opencode.ai/zen/v1"
-        )
-        _loaded_providers[name].__name__ = name
-        _loaded_providers[name].active_by_default = True
-        _loaded_providers[name].default_model = "big-pickle"
-        return _loaded_providers[name]
+        from .OpenCode import OpenCode
+
+        return OpenCode
 
     elif name == "OpenRouter":
         from g4f.Provider.needs_auth.OpenRouter import OpenRouter
