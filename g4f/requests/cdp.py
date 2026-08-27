@@ -250,6 +250,7 @@ def get_shared_browser(host: str, preferred_port: int, headless: bool = True) ->
             f"--remote-debugging-port={port}",
             f"--user-data-dir={user_data_dir}",
             "--window-size=1920,1080",
+            "--window-position=-2000,-2000",
             "--no-default-browser-check",
             "--disable-suggestions-ui",
             "--no-first-run",
@@ -627,15 +628,6 @@ class CDPSession:
         await self.evaluate_js(f"window.scrollBy(0, {random.randint(100, 300)})")
         await asyncio.sleep(0.2)
 
-        # 6. Temporarily disable Network and Runtime interception to hide debugger overhead
-        try:
-            await self.call("Network.disable")
-            await self.call("Runtime.disable")
-            await asyncio.sleep(2)
-        finally:
-            await self.call("Network.enable")
-            await self.call("Runtime.enable")
-
     async def close(self):
         """Close WebSocket session and close the specific target tab."""
         self._closing = True
@@ -762,6 +754,30 @@ class SyncCDPSession:
         self.call("Runtime.enable")
         self.call("Network.enable")
         self.call("Emulation.setFocusEmulationEnabled", enabled=True)
+
+        # Anti-detect: Override User-Agent to remove "HeadlessChrome"
+        try:
+            user_agent = self.evaluate_js("navigator.userAgent")
+            if user_agent and "HeadlessChrome" in user_agent:
+                clean_ua = user_agent.replace("HeadlessChrome", "Chrome")
+                self.call("Network.setUserAgentOverride", userAgent=clean_ua)
+
+            # Anti-detect: Inject Stealth Script
+            stealth_js = """
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            window.chrome = { runtime: {} };
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                if (parameter === 37445) return 'Intel Inc.';
+                if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+                return originalGetParameter.call(this, parameter);
+            };
+            """
+            self.call("Page.addScriptToEvaluateOnNewDocument", source=stealth_js)
+        except Exception as e:
+            logger.debug(f"Failed to inject stealth script in SyncCDPSession: {e}")
 
     def call(self, method: str, **params) -> dict:
         """Send a CDP command and block until the matching response arrives, logging events."""
