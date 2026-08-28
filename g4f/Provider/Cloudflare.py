@@ -121,6 +121,7 @@ class Cloudflare(AsyncGeneratorProvider, ProviderModelMixin):
         debug.log("Cloudflare: Starting CDPSession...")
         session = CDPSession(headless=False)
         await session.start()
+        q = None
 
         try:
             await session.navigate(cls.url)
@@ -233,5 +234,6 @@ class Cloudflare(AsyncGeneratorProvider, ProviderModelMixin):
                 except asyncio.TimeoutError:
                     raise TimeoutError("Timeout waiting for Cloudflare response")
         finally:
-            session.remove_event_handler("Runtime.consoleAPICalled", q)
+            if q is not None:
+                session.remove_event_handler("Runtime.consoleAPICalled", q)
             await session.close()
