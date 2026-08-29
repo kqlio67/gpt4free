@@ -237,6 +237,12 @@ gpt_5_6 = VisionModel(
     best_provider=IterListProvider(["OpenaiChat"]),
 )
 
+luna = VisionModel(
+    name="luna",
+    base_provider="OpenAI",
+    best_provider=IterListProvider(["OpenaiChat"]),
+)
+
 gpt_oss_120b = Model(
     name="gpt-oss-120b",
     long_name="openai/gpt-oss-120b",
