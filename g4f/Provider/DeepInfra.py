@@ -1,172 +1,81 @@
 from __future__ import annotations
 
+import json
+import time
 import asyncio
 import requests
+from typing import Any, Optional
 
-from ..requests.cdp import SyncCDPSession
+from ..requests.cdp import CDPSession
+from ..requests import StreamSession
 from .. import debug
 from .template import OpenaiTemplate
 
 
-def _get_turnstile_token_sync(model: str) -> str:
-    """
-    Synchronous Turnstile token retrieval using SyncCDPSession with retries.
-    Uses a blocking recv() loop — no async timeouts, waits as long as needed.
-    Designed to be run via asyncio.run_in_executor() from async context.
-    """
-    import time
-
-    for attempt in range(1):
-        session = SyncCDPSession(headless=False)
-        session.start_chrome()
-
-        try:
-            url = f"https://deepinfra.com/{model}"
-            debug.log(f"[DeepInfra] Navigating to {url} (Attempt {attempt + 1}/3)...")
-            session.navigate(url)
-
-            # Inject completions request blocker
-            fetch_blocker_js = """
-            const origFetch = window.fetch;
-            window.fetch = async function(...args) {
-                let url = args[0];
-                if (typeof url === 'string' && url.includes('/chat/completions')) {
-                    return new Response('{}', {status: 200});
-                }
-                return origFetch.apply(this, args);
-            };
-            """
-            session.evaluate_js(fetch_blocker_js)
-
-            # Try to click "Accept" on cookies consent popup if present
-            session.evaluate_js(
-                """
-            (() => {
-                const btn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Accept');
-                if (btn) btn.click();
-            })()
-            """
-            )
-
-            # Click on an empty page area to give window focus — signals Cloudflare that
-            # a real user is present, which speeds up Turnstile token generation significantly.
-            session.click(200, 400)
-
-            # Wait for textarea readiness, then focus and input text
-            debug.log("[DeepInfra] Waiting for active textarea...")
-            text_entered = False
-            for _ in range(80):  # Up to 40 seconds
-                try:
-                    ready = session.evaluate_js(
-                        """
-                    (() => {
-                        const ta = document.querySelector('textarea');
-                        const ts = document.querySelector('[name=cf-turnstile-response]');
-                        if (!ta) return 'no_textarea';
-                        if (ta.disabled) return 'disabled';
-                        if (!ts) return 'no_turnstile';
-                        ta.click();
-                        ta.focus();
-                        ta.scrollIntoView({ block: 'center' });
-                        return 'ready';
-                    })()
-                    """
-                    )
-
-                    if ready == "ready":
-                        debug.log(
-                            "[DeepInfra] Textarea and Turnstile found, focusing and entering text..."
-                        )
-
-                        # Retrieve textarea nodeId for native focusing
-                        doc = session.call("DOM.getDocument")
-                        root_id = doc["root"]["nodeId"]
-                        textarea = session.call(
-                            "DOM.querySelector", nodeId=root_id, selector="textarea"
-                        )
-
-                        # Native focus via CDP
-                        session.call("DOM.focus", nodeId=textarea["nodeId"])
-
-                        # Enter text via native CDP command
-                        import random
-
-                        test_prompt = random.choice(
-                            [
-                                "Hello",
-                                "Hi",
-                                "Hey there",
-                                "Testing",
-                                "Ping",
-                                "What's up?",
-                                "Can you hear me?",
-                            ]
-                        )
-                        session.call("Input.insertText", text=test_prompt)
-
-                        time.sleep(0.5)
-
-                        # Simulate Enter keypress
-                        session.call(
-                            "Input.dispatchKeyEvent",
-                            type="keyDown",
-                            windowsVirtualKeyCode=13,
-                            key="Enter",
-                            code="Enter",
-                            text="\r",
-                            unmodifiedText="\r",
-                        )
-                        session.call(
-                            "Input.dispatchKeyEvent",
-                            type="keyUp",
-                            windowsVirtualKeyCode=13,
-                            key="Enter",
-                            code="Enter",
-                            text="\r",
-                            unmodifiedText="\r",
-                        )
-
-                        text_entered = True
-                        break
-                except Exception:
-                    pass
-                time.sleep(0.5)
-
-            if not text_entered:
-                debug.log(
-                    "[DeepInfra] Textarea/Turnstile not ready or failed to submit, retrying attempt..."
-                )
-                session.close()
-                continue
-
-            # Poll page for Turnstile token
-            debug.log("[DeepInfra] Waiting for Cloudflare Turnstile solve...")
-            token_js = "document.querySelector('[name=cf-turnstile-response]') ? document.querySelector('[name=cf-turnstile-response]').value : ''"
-            token = ""
-            for i in range(240):  # Up to 120 seconds per attempt
-                try:
-                    token = session.evaluate_js(token_js)
-                    if token:
-                        debug.log(f"[DeepInfra] Token generated on check {i+1}!")
-                        return token
-                except Exception:
-                    pass
-                time.sleep(0.5)
-
-        except Exception as e:
-            debug.log(f"[DeepInfra] Error on attempt {attempt + 1}: {e}")
-        finally:
-            session.close()
-
-    return ""
+SITEKEY = "0x4AAAAAADlBNBTRb73O02Vo"
 
 
-async def get_turnstile_token_async(model: str = None) -> str:
-    """Run the synchronous Turnstile solver in a thread pool executor."""
-    if not model:
-        model = DeepInfra.default_model
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _get_turnstile_token_sync, model)
+async def get_turnstile_token_async(model: str = "zai-org/GLM-5.3-Flash", timeout: int = 30) -> tuple[str, str, dict]:
+    """Launch CDP session on deepinfra.com, render Turnstile with action infer_chat, and get verified token."""
+    session = CDPSession(headless=False)
+    await session.start()
+
+    try:
+        url = f"https://deepinfra.com/{model}"
+        debug.log(f"[DeepInfra] Navigating to {url}...")
+        await session.navigate(url)
+
+        # Wait until window.turnstile is ready
+        for _ in range(12):
+            has_ts = await session.evaluate_js("typeof window.turnstile !== 'undefined'")
+            if has_ts:
+                break
+            await asyncio.sleep(0.5)
+
+        # Render Turnstile widget with action 'infer_chat'
+        js_render = f"""
+        (() => {{
+            if (!document.getElementById("g4f-di-ts-box")) {{
+                const box = document.createElement("div");
+                box.id = "g4f-di-ts-box";
+                box.style.width = "300px";
+                box.style.height = "65px";
+                box.style.position = "fixed";
+                box.style.top = "10px";
+                box.style.right = "10px";
+                box.style.zIndex = "9999999";
+                document.body.appendChild(box);
+            }}
+
+            window.g4fDiToken = null;
+            if (window.turnstile) {{
+                window.turnstile.render("#g4f-di-ts-box", {{
+                    sitekey: "{SITEKEY}",
+                    action: "infer_chat",
+                    callback: function(token) {{
+                        window.g4fDiToken = token;
+                    }}
+                }});
+            }}
+        }})()
+        """
+        await session.evaluate_js(js_render)
+
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            await asyncio.sleep(1)
+            await session.bypass_turnstile()
+
+            token = await session.evaluate_js("window.g4fDiToken")
+            if token:
+                ua = await session.get_user_agent()
+                cookies = await session.get_cookies()
+                debug.log("[DeepInfra] Successfully obtained Turnstile token!")
+                return token, ua, cookies
+
+        raise RuntimeError("Timed out waiting for DeepInfra Turnstile solve.")
+    finally:
+        await session.close()
 
 
 class DeepInfra(OpenaiTemplate):
@@ -177,7 +86,13 @@ class DeepInfra(OpenaiTemplate):
     working = True
     active_by_default = True
 
-    default_model = "zai-org/GLM-5.2"
+    default_model = "zai-org/GLM-5.3-Flash"
+
+    _cached_token: Optional[str] = None
+    _cached_ua: Optional[str] = None
+    _cached_cookies: Optional[dict] = None
+    _cached_time: float = 0
+    _lock = asyncio.Lock()
 
     @classmethod
     async def get_quota(cls, **kwargs):
@@ -208,25 +123,52 @@ class DeepInfra(OpenaiTemplate):
 
     @classmethod
     async def create_async_generator(
-        cls, model, messages, api_key=None, headers=None, **kwargs
-    ):
+        cls, model: str, messages: Messages, api_key: str = None, headers: dict = None, **kwargs: Any
+    ) -> AsyncResult:
         if not api_key or not cls.is_provider_api_key(api_key):
-            api_key = None # Ensure no API key is sent for web-page requests
-            # Generate a Turnstile token for each request (required without an API key)
-            token = await get_turnstile_token_async(model)
-            if token:
-                if headers is None:
-                    headers = {}
-                headers["X-DeepInfra-Turnstile"] = token
-            else:
-                raise ValueError(
-                    "Failed to obtain Turnstile token for DeepInfra request."
-                )
+            api_key = None
+            async with cls._lock:
+                # Token valid for ~2 minutes
+                if not cls._cached_token or (time.time() - cls._cached_time > 100):
+                    token, ua, cookies = await get_turnstile_token_async(model)
+                    cls._cached_token = token
+                    cls._cached_ua = ua
+                    cls._cached_cookies = cookies
+                    cls._cached_time = time.time()
 
-        async for chunk in super().create_async_generator(
-            model, messages, api_key=api_key, headers=headers, **kwargs
-        ):
-            yield chunk
+            if headers is None:
+                headers = {}
+            headers["X-DeepInfra-Source"] = "web-page"
+            headers["X-DeepInfra-Turnstile"] = cls._cached_token
+            if cls._cached_ua:
+                headers["User-Agent"] = cls._cached_ua
+            if cls._cached_cookies:
+                headers["Cookie"] = "; ".join([f"{k}={v}" for k, v in cls._cached_cookies.items()])
+
+        for attempt in range(2):
+            try:
+                async for chunk in super().create_async_generator(
+                    model, messages, api_key=api_key, headers=headers, **kwargs
+                ):
+                    yield chunk
+                return
+            except Exception as e:
+                # If token expired or rejected, refresh once
+                if attempt == 0 and ("403" in str(e) or "Captcha" in str(e)):
+                    debug.log("[DeepInfra] Captcha rejected, refreshing token...")
+                    async with cls._lock:
+                        token, ua, cookies = await get_turnstile_token_async(model)
+                        cls._cached_token = token
+                        cls._cached_ua = ua
+                        cls._cached_cookies = cookies
+                        cls._cached_time = time.time()
+                    headers["X-DeepInfra-Turnstile"] = token
+                    if ua:
+                        headers["User-Agent"] = ua
+                    if cookies:
+                        headers["Cookie"] = "; ".join([f"{k}={v}" for k, v in cookies.items()])
+                    continue
+                raise e
 
     @classmethod
     def get_headers(
