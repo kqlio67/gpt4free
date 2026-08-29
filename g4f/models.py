@@ -224,6 +224,19 @@ gpt_4_1_nano = Model(
 
 gpt_4_5 = Model(name="gpt-4.5", base_provider="OpenAI", best_provider="OpenaiChat")
 
+# gpt-5.6 luna
+gpt_5_6_luna = VisionModel(
+    name="gpt-5.6-luna",
+    base_provider="OpenAI",
+    best_provider=IterListProvider(["OpenaiChat"]),
+)
+
+gpt_5_6 = VisionModel(
+    name="gpt-5.6",
+    base_provider="OpenAI",
+    best_provider=IterListProvider(["OpenaiChat"]),
+)
+
 gpt_oss_120b = Model(
     name="gpt-oss-120b",
     long_name="openai/gpt-oss-120b",

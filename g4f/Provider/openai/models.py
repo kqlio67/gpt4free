@@ -3,6 +3,8 @@ default_image_model = "gpt-image"
 image_models = [default_image_model]
 text_models = [
     default_model,
+    "gpt-5.6-luna",
+    "gpt-5.6",
     "gpt-5-2",
     "gpt-5-1",
     "gpt-5",
@@ -22,6 +24,9 @@ text_models = [
 vision_models = text_models
 models = text_models + image_models
 model_aliases = {
+    "gpt-5.6-luna": default_model,
+    "gpt-5.6": default_model,
+    "luna": default_model,
     "gpt-5.2": "gpt-5-2",
     "gpt-5.1": "gpt-5-1",
     "gpt-4.1": "gpt-4-1",
